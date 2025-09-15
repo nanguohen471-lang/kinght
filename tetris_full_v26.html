@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<title>俄羅斯方塊 — v21 Final (T-Spin Attack + Improved AI)</title>
+<style>
+:root{--bg:#071029;--muted:#9fb0c8}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:linear-gradient(180deg,#081522,#021018);color:#e6eef8;font-family:Inter,system-ui,Arial}
+body.playing{overflow:hidden}
+.container{width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:18px}
+.machine{width:1100px;max-width:98%;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));padding:18px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,0.6);position:relative}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.controls{display:flex;gap:10px;align-items:center}
+button,select,input{background:#07243a;color:#e6eef8;border:0;padding:8px 10px;border-radius:8px;cursor:pointer}
+.battle{display:flex;gap:36px;align-items:flex-start;justify-content:center}
+.panel-shell{width:420px;background:linear-gradient(180deg,#0b0b0b,#07101a);padding:14px;border-radius:12px;box-shadow:inset 0 6px 20px rgba(0,0,0,0.4);position:relative}
+.title{color:#cfeeff;margin:0 0 8px 0;font-size:16px}
+.board{width:100%;background:#0d1620;padding:10px;border-radius:10px;display:grid;grid-template-columns:repeat(10,28px);grid-template-rows:repeat(20,28px);gap:4px;border:6px solid #0b1015;min-height:calc(20*28px + 19*4px + 20px);}
+.cell{width:28px;height:28px;background:#071927;border-radius:4px;border:1px solid rgba(255,255,255,0.02);box-sizing:border-box}
+.I{background:linear-gradient(180deg,#7ee7ff,#00a3d7);border:1px solid rgba(0,160,215,0.9)}
+.O{background:linear-gradient(180deg,#ffe07a,#ffbf3b);border:1px solid rgba(255,190,40,0.9)}
+.T{background:linear-gradient(180deg,#d6b3ff,#8b5cf6);border:1px solid rgba(139,92,246,0.9)}
+.S{background:linear-gradient(180deg,#b7ff90,#38a169);border:1px solid rgba(56,161,105,0.9)}
+.Z{background:linear-gradient(180deg,#ff9b9b,#f43f5e);border:1px solid rgba(244,63,94,0.9)}
+.J{background:linear-gradient(180deg,#8cc9ff,#2563eb);border:1px solid rgba(37,99,235,0.9)}
+.L{background:linear-gradient(180deg,#ffd7a3,#f97316);border:1px solid rgba(249,115,22,0.9)}
+.G{background:#6c757d;border:1px solid #555;opacity:0.95}
+.hud-row{display:flex;gap:10px;width:100%;margin-top:8px;justify-content:space-between}
+.mini{display:grid;grid-template-columns:repeat(4,20px);gap:4px;padding:6px;background:#021225;border-radius:6px;min-height:44px}
+.info{background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;color:var(--muted);width:260px}
+.attack-channel{width:120px;display:flex;align-items:center;justify-content:center;position:relative}
+.attack-path{width:14px;height:420px;background:transparent;border-left:2px dashed rgba(255,255,255,0.03);}
+.attack-beam{position:fixed;width:18px;height:18px;border-radius:8px;pointer-events:none;z-index:160;mix-blend-mode:screen}
+.attack-trail{position:fixed;pointer-events:none;z-index:155;filter:blur(8px);opacity:0.9}
+.sent-fly{position:fixed;color:#fff;font-weight:700;text-shadow:0 0 10px rgba(255,255,255,0.6);transform:translateY(0);transition:transform 700ms ease,opacity 700ms ease;pointer-events:none;z-index:170}
+#particleCanvas{position:fixed;left:0;top:0;pointer-events:none;z-index:150}
+#tGhost{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%) scale(0.2) rotate(0);pointer-events:none;opacity:0;z-index:200;width:260px;height:260px;border-radius:8px;display:flex;align-items:center;justify-content:center;mix-blend-mode:screen}
+#tGhost svg{width:220px;height:220px;filter:drop-shadow(0 0 20px rgba(150,100,255,0.6));}
+.footer{margin-top:12px;text-align:center;font-size:12px;color:var(--muted)}
+@media (max-width: 860px){
+  .machine{width:96%;padding:12px}
+  .battle{flex-direction:column;gap:12px;align-items:center}
+  .panel-shell{width:96%}
+  .attack-channel{display:none}
+  .board{grid-template-columns:repeat(10,calc((min(480px,100vw) - 60px)/10));grid-template-rows:repeat(20,calc((min(480px,100vw) - 60px)/10));gap:3px;min-height:auto}
+  .cell{border-radius:3px}
+  .info{width:100%}
+}
+.touch-controls{display:none}
+@media (max-width:860px){
+  .touch-controls{display:flex;position:fixed;left:0;right:0;bottom:6px;justify-content:center;gap:10px;z-index:220}
+  .touch-controls button{width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,0.08);border:0;color:#fff;font-size:18px;backdrop-filter:blur(4px)}
+  .touch-controls .wide{width:120px;border-radius:30px}
+}
+
+    .ghost{background:transparent !important; border:2px dashed rgba(255,255,255,0.85); border-radius:6px; box-shadow: none;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="machine" id="machine" role="application" aria-label="Tetris Battle Machine">
+    <div class="header">
+      <h1 style="margin:0;font-size:20px">俄羅斯方塊 — v21 Final</h1>
+      <div class="controls">
+        <label>模式
+          <select id="modeSelect"><option value="solo">單機</option><option value="ai" selected>AI 對決 (180s)</option></select>
+        </label>
+        <label>難度
+          <select id="diffSelect"><option value="easy">簡單</option><option value="normal" selected>普通</option><option value="hard">困難</option></select>
+        </label>
+        <button id="startBtn">開始</button>
+        <button id="pauseBtn">暫停</button>
+        <button id="musicToggle">音樂：關</button>
+      </div>
+    </div>
+    <div class="battle" id="battleArea">
+      <div class="panel-shell" id="playerShell">
+        <div class="title">玩家</div>
+        <div style="display:flex;gap:8px;width:100%;align-items:center;justify-content:space-between">
+          <div style="flex:0 0 76px">
+            <div style="color:var(--muted);font-size:12px;margin-bottom:6px">HOLD</div>
+            <div id="holdBox" class="mini" style="width:76px"></div>
+          </div>
+          <div style="flex:1"><div id="playerBoard" class="board" aria-label="player board"></div></div>
+          <div style="flex:0 0 76px">
+            <div style="color:var(--muted);font-size:12px;margin-bottom:6px">NEXT</div>
+            <div id="nextBox" class="mini" style="width:76px"></div>
+          </div>
+        </div>
+        <div class="hud-row">
+          <div class="info">
+            模式：<span id="modeText">-</span><br>
+            時間：<span id="timer">-</span><br>
+            分數：<span id="playerScore">0</span><br>
+            行數：<span id="playerLines">0</span><br>
+            SENT：<span id="playerSent">0</span>
+          </div>
+          <div style="width:120px">
+            <div style="color:var(--muted);font-size:12px">排行榜 (local)</div>
+            <table id="lbTable" style="width:100%;margin-top:8px"><thead><tr><th>#</th><th>分數</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+      <div class="attack-channel" aria-hidden="true"><div class="attack-path"></div></div>
+      <div class="panel-shell" id="aiShell">
+        <div class="title">對手</div>
+        <div style="display:flex;gap:8px;width:100%;align-items:center;justify-content:space-between">
+          <div style="flex:0 0 76px">
+            <div style="color:var(--muted);font-size:12px;margin-bottom:6px">HOLD</div>
+            <div id="aiHold" class="mini" style="width:76px"></div>
+          </div>
+          <div style="flex:1"><div id="aiBoard" class="board" aria-label="ai board"></div></div>
+          <div style="flex:0 0 76px">
+            <div style="color:var(--muted);font-size:12px;margin-bottom:6px">NEXT</div>
+            <div id="aiNextBox" class="mini" style="width:76px"></div>
+          </div>
+        </div>
+        <div class="hud-row" style="margin-top:8px">
+          <div class="info">
+            對手資訊<br>
+            分數：<span id="aiScore">0</span><br>
+            行數：<span id="aiLines">0</span><br>
+            SENT：<span id="aiSent">0</span>
+          </div>
+          <div style="width:120px">
+            <div style="color:var(--muted);font-size:12px">設定</div>
+            <div style="margin-top:6px">AI 強度：<select id="aiDepth"><option value="1">淺</option><option value="2" selected>進階</option><option value="3">高手</option></select></div>
+            <div style="margin-top:8px"><label><input id="soundToggle" type="checkbox" checked/> 音效</label></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="footer">操作：← → 移動 / ↑ 旋轉 / Z 逆旋 / 空白 硬降 / C Hold / P 暫停</div>
+  </div>
+</div>
+<div id="tGhost"></div>
+<div class="touch-controls" id="touchControls" aria-hidden="true">
+  <button id="btnLeft">⬅️</button>
+  <button id="btnRight">➡️</button>
+  <button id="btnDown">⬇️</button>
+  <button id="btnRotate">⤴️</button>
+  <button id="btnDrop" class="wide">⏬</button>
+  <button id="btnHold">🔄</button>
+</div>
+<canvas id="particleCanvas"></canvas>
+<audio id="bgm" loop crossorigin="anonymous"></audio>
+<audio id="sfx_clear" src="https://cdn.pixabay.com/download/audio/2021/08/08/audio_1b4b8d7c25.mp3?filename=click-1-6295.mp3"></audio>
+<audio id="sfx_attack" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_3a3016a5b8.mp3?filename=retro-explosion-110949.mp3"></audio>
+<audio id="sfx_hit" src="https://cdn.pixabay.com/download/audio/2021/08/04/audio_9b9f2e9d2b.mp3?filename=impact-7051.mp3"></audio>
+<script>
+/* v21 final: improve AI and add big T-ghost attack effect when T-Spin occurs */
+const ROWS=20,COLS=10;
+const TETROMINOES={ I:[[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],[[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,1,0]]], O:[[[0,1,1,0],[0,1,1,0],[0,0,0,0],[0,0,0,0]]], T:[[[0,1,0,0],[1,1,1,0],[0,0,0,0],[0,0,0,0]],[[0,1,0,0],[0,1,1,0],[0,1,0,0],[0,0,0,0]],[[0,0,0,0],[1,1,1,0],[0,1,0,0],[0,0,0,0]],[[0,1,0,0],[1,1,0,0],[0,1,0,0],[0,0,0,0]]], S:[[[0,1,1,0],[1,1,0,0],[0,0,0,0],[0,0,0,0]],[[0,1,0,0],[0,1,1,0],[0,0,1,0],[0,0,0,0]]], Z:[[[1,1,0,0],[0,1,1,0],[0,0,0,0],[0,0,0,0]],[[0,0,1,0],[0,1,1,0],[0,1,0,0],[0,0,0,0]]], J:[[[1,0,0,0],[1,1,1,0],[0,0,0,0],[0,0,0,0]],[[0,1,1,0],[0,1,0,0],[0,1,0,0],[0,0,0,0]],[[0,0,0,0],[1,1,1,0],[0,0,1,0],[0,0,0,0]],[[0,1,0,0],[0,1,0,0],[1,1,0,0],[0,0,0,0]]], L:[[[0,0,1,0],[1,1,1,0],[0,0,0,0],[0,0,0,0]],[[0,1,0,0],[0,1,0,0],[0,1,1,0],[0,0,0,0]],[[0,0,0,0],[1,1,1,0],[1,0,0,0],[0,0,0,0]],[[1,1,0,0],[0,1,0,0],[0,1,0,0],[0,0,0,0]]] };
+const PIECE_TYPES=Object.keys(TETROMINOES);
+function clone(m){return m.map(r=>r.slice());}
+function newBag(){const b=PIECE_TYPES.slice();for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
+const playerBoardEl=document.getElementById('playerBoard'), aiBoardEl=document.getElementById('aiBoard');
+const nextBox=document.getElementById('nextBox'), aiNextBox=document.getElementById('aiNextBox');
+const holdBox=document.getElementById('holdBox'), aiHold=document.getElementById('aiHold');
+const modeText=document.getElementById('modeText'), timerEl=document.getElementById('timer');
+const particleCanvas=document.getElementById('particleCanvas'), pCtx=particleCanvas.getContext('2d');
+const tGhostEl=document.getElementById('tGhost');
+const sfx_clear=document.getElementById('sfx_clear'), sfx_attack=document.getElementById('sfx_attack'), sfx_hit=document.getElementById('sfx_hit');
+function resizeCanvas(){particleCanvas.width=window.innerWidth;particleCanvas.height=window.innerHeight;}window.addEventListener('resize',resizeCanvas);resizeCanvas();
+let particles=[]; function spawnParticles(x,y,color,count=26){ for(let i=0;i<count;i++){ particles.push({x,y,vx:(Math.random()-0.5)*10,vy:(Math.random()-1.8)*10,life:44,color}); } }
+function updateParticles(){ pCtx.clearRect(0,0,particleCanvas.width,particleCanvas.height); particles=particles.filter(p=>p.life>0); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.life--; pCtx.globalAlpha=Math.max(0,p.life/44); pCtx.fillStyle=p.color; pCtx.beginPath(); pCtx.arc(p.x,p.y,3,0,Math.PI*2); pCtx.fill(); }); requestAnimationFrame(updateParticles);} updateParticles();
+function makeBoard(el){ el.innerHTML=''; for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){ const d=document.createElement('div'); d.className='cell'; d.dataset.r=r; d.dataset.c=c; el.appendChild(d);} } makeBoard(playerBoardEl); makeBoard(aiBoardEl);
+let musicOn=false; const musicList=[{name:'Tetris',url:'https://upload.wikimedia.org/wikipedia/commons/4/42/Tetris_theme.ogg'}];
+document.getElementById('musicToggle').addEventListener('click',()=>{const bgm=document.getElementById('bgm'); if(!musicOn){ bgm.src=musicList[0].url; bgm.play().catch(()=>{}); musicOn=true; document.getElementById('musicToggle').innerText='音樂：開'; } else { bgm.pause(); musicOn=false; document.getElementById('musicToggle').innerText='音樂：關'; }});
+class Game{ constructor(opts){ this.boardEl=opts.boardEl; this.nextEl=opts.nextEl||null; this.holdEl=opts.holdEl||null; this.scoreEl=opts.scoreEl||null; this.linesEl=opts.linesEl||null; this.sentEl=opts.sentEl||null; this.isAI=!!opts.isAI; this.reset(); }
+  reset(){ this.board=Array.from({length:ROWS},()=>Array(COLS).fill(null)); this.bag=newBag(); this.bagIndex=0; this.queue=[]; for(let i=0;i<5;i++) this.queue.push(this.take()); this.hold=null; this.holdUsed=false; this.score=0; this.lines=0; this.sent=0; this.gameOver=false; this.lastRotate=false; this.spawn(); this.renderAll(); }
+  take(){ if(this.bagIndex>=this.bag.length){ this.bag=newBag(); this.bagIndex=0; } return this.bag[this.bagIndex++]; }
+  spawn(){ this.lastRotate=false; const type=this.queue.shift(); this.queue.push(this.take()); this.current={type,rot:0,shape:clone(TETROMINOES[type][0]),x:3,y:-2}; if(!this.canPlace(this.current,0,0)){ this.gameOver=true; return false; } return true; }
+  canPlace(piece,dx=0,dy=0,shape=null){ shape=shape||piece.shape; for(let r=0;r<shape.length;r++) for(let c=0;c<shape[r].length;c++) if(shape[r][c]){ const x=piece.x+c+dx, y=piece.y+r+dy; if(x<0||x>=COLS||y>=ROWS) return false; if(y>=0 && this.board[y][x]) return false; } return true; }
+  getGhost(){ 
+    if(!this.current) return null; 
+    const g = {x:this.current.x, y:this.current.y, shape:this.current.shape.map(r=>r.slice())}; 
+    while(true){ 
+      let ok=true; 
+      for(let r=0;r<g.shape.length;r++) for(let c=0;c<g.shape[r].length;c++) if(g.shape[r][c]){ 
+        const x=g.x+c, y=g.y+r+1; 
+        if(x<0||x>=COLS||y>=ROWS){ ok=false; break; } 
+        if(y>=0 && this.board[y][x]){ ok=false; break; } 
+      } 
+      if(!ok) break; g.y++; 
+    } 
+    return g; 
+  }
+
+  rotate(dir=1){ const type=this.current.type; const rots=TETROMINOES[type]; const next=(this.current.rot+dir+rots.length)%rots.length; const candidate=clone(TETROMINOES[type][next]); if(this.canPlace(this.current,0,0,candidate)){ this.current.rot=next; this.current.shape=candidate; this.lastRotate=true; } }
+  hardDrop(){ let drop=0; while(this.canPlace(this.current,0,1)){ this.current.y++; drop++; } const removed=this.lock(); this.score+=drop*2; this.renderAll(); return removed; }
+  stepDown(){ if(this.canPlace(this.current,0,1)) this.current.y++; else { const removed=this.lock(); this.renderAll(); return removed; } this.renderAll(); return 0; }
+  lock(){ for(let r=0;r<this.current.shape.length;r++) for(let c=0;c<this.current.shape[r].length;c++) if(this.current.shape[r][c]){ const x=this.current.x+c, y=this.current.y+r; if(y>=0) this.board[y][x]=this.current.type; else this.gameOver=true; }
+    const isT = (this.current.type==='T' && this.lastRotate);
+    let removed=0; const newB=[]; for(let r=0;r<ROWS;r++){ if(this.board[r].every(cell=>cell!==null)) removed++; else newB.push(this.board[r]); } while(newB.length<ROWS) newB.unshift(Array(COLS).fill(null)); this.board=newB;
+    let tspin=false;
+    if(isT){ const cx = this.current.x; const cy = this.current.y; let blocked=0; const checkCorner = (ox,oy)=>{ const x=cx+ox; const y=cy+oy; if(x<0||x>=COLS||y<0||y>=ROWS) return true; return !!this.board[y][x]; }; if(checkCorner(0,0)) blocked++; if(checkCorner(2,0)) blocked++; if(checkCorner(0,2)) blocked++; if(checkCorner(2,2)) blocked++; if(blocked>=3) tspin=true; }
+    if(removed>0){ this.lines+=removed; this.score+= [0,40,100,300,1200][removed]||removed*100; if(this.linesEl) this.linesEl.textContent=this.lines; if(this.scoreEl) this.scoreEl.textContent=this.score; if(document.getElementById('soundToggle').checked){ sfx_clear.currentTime=0; sfx_clear.play(); } }
+    if(tspin){ let bonus=0; if(removed===0) bonus=100; else if(removed===1) bonus=800; else if(removed===2) bonus=1200; else if(removed>=3) bonus=1600; this.score += bonus; if(this.scoreEl) this.scoreEl.textContent=this.score; const rect = this.boardEl.getBoundingClientRect(); const cx = rect.left + rect.width/2; const cy = rect.top + rect.height/2; spawnParticles(cx,cy,'#b16aff',100); if(document.getElementById('soundToggle').checked){ sfx_attack.currentTime=0; sfx_attack.play(); } if(this===player && ai && !ai.gameOver){ showTGhost(); setTimeout(()=>{ createBeam(playerBoardEl, aiBoardEl, '#b16aff', '+' + Math.max(1,removed-1)); ai.addGarbage(Math.max(1,removed-1)); }, 220); } else if(this===ai && player && !player.gameOver){ showTGhost(true); setTimeout(()=>{ createBeam(aiBoardEl, playerBoardEl, '#ff6fb1', '+' + Math.max(1,removed-1)); player.addGarbage(Math.max(1,removed-1)); }, 220); } }
+    this.lastRotate=false; this.holdUsed=false; this.spawn(); return removed; }
+  addGarbage(n){ for(let i=0;i<n;i++){ const hole=Math.floor(Math.random()*COLS); this.board.shift(); const row=Array(COLS).fill('G'); row[hole]=null; this.board.push(row); } if(this.board[0].some(c=>c)) this.gameOver=true; this.renderAll(); if(document.getElementById('soundToggle').checked){ sfx_hit.currentTime=0; sfx_hit.play(); } }
+  renderAll(){ this.renderBoard(); this.renderMini(this.nextEl,this.queue[0]); this.renderMini(this.holdEl,this.hold); if(this.scoreEl) this.scoreEl.textContent=this.score; if(this.linesEl) this.linesEl.textContent=this.lines; if(this.sentEl) this.sentEl.textContent=this.sent; }
+  renderBoard(){ this.boardEl.innerHTML=''; for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){ const d=document.createElement('div'); d.className='cell'; const v=this.board[r][c]; if(v && v!=='G') d.classList.add(v); else if(v==='G') d.classList.add('G'); this.boardEl.appendChild(d); } 
+    // --- render ghost overlay for player ---
+    try{
+      if(this===player){ const g = this.getGhost(); if(g){ for(let rr=0;rr<g.shape.length;rr++) for(let cc=0;cc<g.shape[rr].length;cc++) if(g.shape[rr][cc]){ const gx=g.x+cc, gy=g.y+rr; if(gy>=0 && gx>=0 && gx<COLS && gy<ROWS){ const idx=gy*COLS+gx; const el=this.boardEl.children[idx]; if(el) el.classList.add('ghost'); } } } }
+    }catch(e){}
+if(this.current){ for(let r=0;r<this.current.shape.length;r++) for(let c=0;c<this.current.shape[r].length;c++) if(this.current.shape[r][c]){ const x=this.current.x+c, y=this.current.y+r; if(y>=0&&x>=0&&x<COLS&&y<ROWS){ const idx=y*COLS+x; const el=this.boardEl.children[idx]; if(el) el.classList.add(this.current.type); } } } }
+  renderMini(el,type){ if(!el) return; el.innerHTML=''; for(let r=0;r<4;r++) for(let c=0;c<4;c++){ const d=document.createElement('div'); d.style.width='20px'; d.style.height='20px'; d.style.display='inline-block'; d.style.margin='2px'; d.style.background='#021225'; if(type && TETROMINOES[type][0][r] && TETROMINOES[type][0][r][c]) d.classList.add(type); el.appendChild(d); } }
+  holdPiece(){ if(this.holdUsed) return; if(!this.hold){ this.hold=this.current.type; this.spawn(); } else { const t=this.hold; this.hold=this.current.type; this.current={type:t,rot:0,shape:clone(TETROMINOES[t][0]),x:3,y:-2}; } this.holdUsed=true; this.lastRotate=false; this.renderAll(); }
+}
+function createBeam(fromEl,toEl,color,label){ const from=fromEl.getBoundingClientRect(); const to=toEl.getBoundingClientRect(); const startX=from.left+from.width/2, startY=from.top+from.height/2; const endX=to.left+to.width/2, endY=to.top+to.height/2; for(let i=0;i<8;i++){ const b=document.createElement('div'); b.className='attack-beam'; b.style.left=(startX+(Math.random()-0.5)*60)+'px'; b.style.top=(startY+(Math.random()-0.5)*40)+'px'; b.style.background=color; b.style.boxShadow=`0 0 18px ${color}`; b.style.opacity=1-i*0.12; document.body.appendChild(b); const dx=endX-startX+(Math.random()-0.5)*30; const dy=endY-startY+(Math.random()-0.5)*30; b.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${dx}px, ${dy}px) scale(0.6) rotate(${(Math.random()*720)|0}deg)`,opacity:0}],{duration:520+Math.random()*200,easing:'cubic-bezier(.2,.9,.2,1)'}); setTimeout(()=>b.remove(),760); } const trail=document.createElement('div'); trail.className='attack-trail'; trail.style.left=startX+'px'; trail.style.top=startY+'px'; trail.style.width='60px'; trail.style.height='12px'; trail.style.borderRadius='8px'; trail.style.background=color; trail.style.opacity='0.6'; document.body.appendChild(trail); trail.animate([{transform:'translate(0,0) scaleX(1)',opacity:0.6},{transform:`translate(${endX-startX}px, ${endY-startY}px) scaleX(0.1)`,opacity:0}],{duration:520,easing:'linear'}); setTimeout(()=>trail.remove(),520); if(label){ const lbl=document.createElement('div'); lbl.className='sent-fly'; lbl.style.left=(endX-20)+'px'; lbl.style.top=(endY-30)+'px'; lbl.textContent=label; document.body.appendChild(lbl); requestAnimationFrame(()=>{ lbl.style.transform='translateY(-30px)'; lbl.style.opacity='0'; }); setTimeout(()=>lbl.remove(),900); } if(document.getElementById('soundToggle').checked){ sfx_attack.currentTime=0; sfx_attack.play(); } }
+function showTGhost(inverse=false){ tGhostEl.innerHTML = `
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#b16aff"/><stop offset="1" stop-color="#6ad1ff"/></linearGradient></defs>
+  <rect x="20" y="10" width="60" height="20" rx="4" fill="url(#g1)" opacity="0.95"/>
+  <rect x="40" y="10" width="20" height="70" rx="4" fill="url(#g1)" opacity="0.95"/>
+</svg>`; tGhostEl.style.opacity='1'; tGhostEl.style.transform='translate(-50%,-50%) scale(0.5) rotate(0deg)'; tGhostEl.animate([{transform:'translate(-50%,-50%) scale(0.5) rotate(0deg)',opacity:1},{transform:'translate(-50%,-50%) scale(1.15) rotate(360deg)',opacity:0}],{duration:900,easing:'cubic-bezier(.2,.9,.2,1)'}); setTimeout(()=>{ tGhostEl.style.opacity='0'; tGhostEl.innerHTML=''; },900); }
+let player=null, ai=null, tickId=null, timerId=null, timeLeft=180;
+function startGame(){ try{ document.body.classList.add('playing'); const mode=document.getElementById('modeSelect').value; const diff=document.getElementById('diffSelect').value; player=new Game({boardEl:playerBoardEl,nextEl:nextBox,holdEl:holdBox,scoreEl:document.getElementById('playerScore'),linesEl:document.getElementById('playerLines'),sentEl:document.getElementById('playerSent')}); if(mode==='ai') ai=new Game({boardEl:aiBoardEl,nextEl:aiNextBox,holdEl:aiHold,scoreEl:document.getElementById('aiScore'),linesEl:document.getElementById('aiLines'),sentEl:document.getElementById('aiSent'),isAI:true}); else ai=null; modeText.innerText=(mode==='ai')?'AI 對決 (180s)':'單機'; timeLeft=180; timerEl.innerText=(mode==='ai')?timeLeft:'-'; clearInterval(tickId); tickId=setInterval(()=>{ try{ if(player && !player.gameOver){ const removed=player.stepDown(); if(removed>0 && ai){ const sent=calcSent(removed); if(sent>0){ player.sent+=sent; if(player.sentEl) player.sentEl.textContent=player.sent; ai.addGarbage(sent); createBeam(playerBoardEl,aiBoardEl,'#00f0ff',`+${sent}`); const to=aiBoardEl.getBoundingClientRect(); explodeAt(to.left+to.width/2,to.top+to.height/2,'#00f0ff'); } } if(player.gameOver){ finish('player_dead'); return; } } if(ai && !ai.gameOver){ try{ aiThink(ai); }catch(e){ console.warn('AI error',e); } const removedA=ai.stepDown(); if(removedA>0 && player){ const sent=calcSent(removedA); if(sent>0){ ai.sent+=sent; if(ai.sentEl) ai.sentEl.textContent=ai.sent; player.addGarbage(sent); createBeam(aiBoardEl,playerBoardEl,'#ff4d4d',`+${sent}`); const to=playerBoardEl.getBoundingClientRect(); explodeAt(to.left+to.width/2,to.top+to.height/2,'#ff4d4d'); } } if(ai.gameOver){ finish('ai_dead'); return; } } }catch(err){console.error('tick error',err);} }, getSpeed(diff)); clearInterval(timerId); if(mode==='ai'){ timerId=setInterval(()=>{ timeLeft--; timerEl.innerText=timeLeft; if(timeLeft<=0) finish('time_up'); },1000); } }catch(err){ console.error('startGame error',err); alert('啟動失敗，請重新整理頁面再試。'); } }
+function finish(reason){ clearInterval(tickId); clearInterval(timerId); document.body.classList.remove('playing'); let text='遊戲結束'; if(reason==='player_dead') text='你碰頂了!'; else if(reason==='ai_dead') text='對手碰頂!'; else if(reason==='time_up'){ const ps=player?player.score:0, as=ai?ai.score:0; if(ps>as) text=`時間到 — 你贏了 (${ps}:${as})`; else if(ps<as) text=`時間到 — AI 勝利 (${ps}:${as})`; else text=`時間到 — 平手 (${ps}:${as})`; } alert(text); }
+function aiThink(ai){
+  if(!ai || !ai.current) return;
+  const depth = Math.min(2, parseInt(document.getElementById('aiDepth').value||2));
+  const beamWidth = (depth===2)?8:6;
+  function genPlacements(board,type){ const rots = TETROMINOES[type].length; const res=[]; for(let r=0;r<rots;r++){ const shape = clone(TETROMINOES[type][r]); for(let x=-2;x<COLS+2;x++){ let y=-4; while(true){ let coll=false; for(let ry=0;ry<shape.length;ry++) for(let cx=0;cx<shape[ry].length;cx++) if(shape[ry][cx]){ const px=x+cx, py=y+ry; if(px<0||px>=COLS||py>=ROWS){ coll=true; break; } if(py>=0 && board[py][px]){ coll=true; break;} } if(coll) break; y++; } y--; if(y<-3) continue; const proj = board.map(rr=>rr.slice()); let valid=true; for(let ry=0;ry<shape.length;ry++) for(let cx=0;cx<shape[ry].length;cx++) if(shape[ry][cx]){ const px=x+cx, py=y+ry; if(px<0||px>=COLS||py<0||py>=ROWS){ valid=false; break; } proj[py][px]=type; } if(!valid) continue; let removed=0; const nb=[]; for(let rr=0;rr<ROWS;rr++){ if(proj[rr].every(c=>c!==null)) removed++; else nb.push(proj[rr]); } while(nb.length<ROWS) nb.unshift(Array(COLS).fill(null)); res.push({x,rot:r,proj,removed}); } } return res; }
+  function evalBoard(board,removed,isTSpin,combo){ const heights=Array(COLS).fill(0); for(let c=0;c<COLS;c++){ for(let r=0;r<ROWS;r++){ if(board[r][c]){ heights[c]=ROWS-r; break; } } } const agg = heights.reduce((a,b)=>a+b,0); let holes=0; for(let c=0;c<COLS;c++){ let seen=false; for(let r=0;r<ROWS;r++){ if(board[r][c]) seen=true; else if(seen) holes++; } } let bump=0; for(let i=0;i<COLS-1;i++) bump+=Math.abs(heights[i]-heights[i+1]); let score = holes*110 + agg*1.2 + bump*1.5; if(removed>0) score -= (removed===4?450: removed*140); if(isTSpin) score -= 700; if(combo>0) score -= combo*40; return score; }
+  const startBoard = ai.board.map(r=>r.slice()); const startPiece = ai.current.type; let beam = [{board:startBoard, score: evalBoard(startBoard,0,false,0), seq:[], combo:0, nextQueue: ai.queue.slice()}];
+  for(let d=0; d<depth; d++){ const nextBeam=[]; for(const node of beam){ const pieceType = (d===0)? ai.current.type : (node.nextQueue.shift() || PIECE_TYPES[Math.floor(Math.random()*PIECE_TYPES.length)]); const placements = genPlacements(node.board, pieceType); for(const p of placements){ let isTSpin=false; const removed = p.removed||0; const combo = node.combo + (removed>0?1:0); const sc = evalBoard(p.proj, removed, isTSpin, combo); nextBeam.push({board: p.proj, score: sc, seq: node.seq.concat([{x:p.x,rot:p.rot,removed}]), combo: combo, nextQueue: node.nextQueue.slice()}); } } nextBeam.sort((a,b)=>a.score-b.score); beam = nextBeam.slice(0, beamWidth); if(beam.length===0) break; }
+  if(beam.length>0 && beam[0].seq && beam[0].seq[0]){ const best = beam[0].seq[0]; const desiredRot = best.rot % TETROMINOES[ai.current.type].length; if(ai.current.rot !== desiredRot) ai.rotate(1); else if(ai.current.x < best.x) ai.current.x++; else if(ai.current.x > best.x) ai.current.x--; else ai.hardDrop(); }
+}
+function getSpeed(diff){ if(diff==='easy') return 700; if(diff==='normal') return 450; return 300; }
+function calcSent(removed){ if(removed<=1) return 0; if(removed===2) return 1; if(removed===3) return 2; if(removed>=4) return 4; return 0; }
+function explodeAt(x,y,color){ spawnParticles(x,y,color,30); if(document.getElementById('soundToggle').checked){ sfx_hit.currentTime=0; sfx_hit.play(); } }
+document.getElementById('startBtn').addEventListener('click',()=>{ startGame(); });
+document.getElementById('pauseBtn').addEventListener('click',()=>{ if(tickId){ clearInterval(tickId); tickId=null; document.getElementById('pauseBtn').innerText='繼續'; } else startGame(); });
+document.addEventListener('keydown',e=>{ if(!player||player.gameOver) return; if(['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return; const k=e.key; if(k==='ArrowLeft' && player.canPlace(player.current,-1,0)){ player.current.x--; } else if(k==='ArrowRight' && player.canPlace(player.current,1,0)){ player.current.x++; } else if(k==='ArrowDown' && player.canPlace(player.current,0,1)){ player.current.y++; } else if(k===' '){ const removed=player.hardDrop(); if(removed>0 && ai){ const sent=calcSent(removed); if(sent>0){ player.sent+=sent; if(player.sentEl) player.sentEl.textContent=player.sent; ai.addGarbage(sent); createBeam(playerBoardEl,aiBoardEl,'#00f0ff',`+${sent}`); const to=aiBoardEl.getBoundingClientRect(); explodeAt(to.left+to.width/2,to.top+to.height/2,'#00f0ff'); } } } else if(k==='ArrowUp'){ player.rotate(1); } else if(k.toLowerCase()==='z'){ player.rotate(-1); } else if(k.toLowerCase()==='c'){ player.holdPiece(); } else if(k.toLowerCase()==='p'){ if(tickId){ clearInterval(tickId); tickId=null; } else startGame(); } player.renderAll(); });
+const btnLeft=document.getElementById('btnLeft'), btnRight=document.getElementById('btnRight'), btnDown=document.getElementById('btnDown'), btnRotate=document.getElementById('btnRotate'), btnDrop=document.getElementById('btnDrop'), btnHold=document.getElementById('btnHold');
+[btnLeft,btnRight,btnDown,btnRotate,btnDrop,btnHold].forEach(b=>{ if(!b) return; b.addEventListener('touchstart', (ev)=>{ ev.preventDefault(); btnAction(b.id); }, {passive:false}); b.addEventListener('mousedown',(ev)=>{ ev.preventDefault(); btnAction(b.id); }); });
+function btnAction(id){ if(!player||player.gameOver) return; if(id==='btnLeft') { if(player.canPlace(player.current,-1,0)) player.current.x--; } else if(id==='btnRight'){ if(player.canPlace(player.current,1,0)) player.current.x++; } else if(id==='btnDown'){ if(player.canPlace(player.current,0,1)) player.current.y++; } else if(id==='btnRotate'){ player.rotate(1); } else if(id==='btnDrop'){ const removed=player.hardDrop(); if(removed>0 && ai){ const sent=calcSent(removed); if(sent>0){ player.sent+=sent; if(player.sentEl) player.sentEl.textContent=player.sent; ai.addGarbage(sent); createBeam(playerBoardEl,aiBoardEl,'#00f0ff',`+${sent}`); const to=aiBoardEl.getBoundingClientRect(); explodeAt(to.left+to.width/2,to.top+to.height/2,'#00f0ff'); } } } else if(id==='btnHold'){ player.holdPiece(); } player.renderAll(); }
+function loadLB(){ try{const raw=localStorage.getItem('tetris_lb'); return raw?JSON.parse(raw):[];}catch(e){return[];} }
+function saveLB(list){ localStorage.setItem('tetris_lb',JSON.stringify(list)); renderLB(); }
+function renderLB(){ const tbody=document.querySelector('#lbTable tbody'); if(!tbody) return; tbody.innerHTML=''; const list=loadLB().slice(0,6); list.forEach((it,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${i+1}</td><td>${it.score}</td>`; tbody.appendChild(tr); }); }
+renderLB();
+</script>
+</body>
+</html>
